@@ -1,0 +1,18 @@
+[package]
+name = "facenet"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "facenet"
+
+[dependencies]
+ort = "2.0.0-rc.11"
+uniffi = { version = "0.31.0", features = ["cli"] }
+image = "0.25.9"
+thiserror = "2.0.18"
+ndarray = "0.17.2"
+
+[build-dependencies]
+uniffi = { version = "0.31.0", features = ["build"] }
