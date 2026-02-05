@@ -11,9 +11,7 @@ name = "facenet"
 ort = "2.0.0-rc.11"
 uniffi = { version = "0.31.0", features = ["cli"] }
 image = "0.25.9"
-thiserror = "2.0.18"
 ndarray = "0.17.2"
-rayon = "1.11.0"
 
 [build-dependencies]
 uniffi = { version = "0.31.0", features = ["build"] }
