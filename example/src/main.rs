@@ -1,12 +1,11 @@
-use facenet::run_feature_extractor;
-use facenet::utils::read_image;
-use facenet::YOLOFaceDetector;
+use facenet::{detect_face, extract_embedding};
 
 const IMAGE_PATH: &str = "../assets/cool_girl.jpg";
 
 fn main() {
-    let img = read_image(IMAGE_PATH);
-    let mut detector = YOLOFaceDetector::new();
-    let output = detector.detect(&[img]);
-    println!("{:?}", output);
+    let now = std::time::Instant::now();
+    let result = extract_embedding(IMAGE_PATH);
+    let elapsed = now.elapsed();
+    println!("{:?}", result);
+    println!("Elapsed: {:?}", elapsed);
 }
