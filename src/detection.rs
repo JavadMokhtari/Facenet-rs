@@ -1,92 +1,44 @@
-use image::{DynamicImage, imageops::FilterType};
-use ndarray::{Array4, Axis, s};
+use image::DynamicImage;
+use ndarray::{Axis, s};
 use ort::session::Session;
 use ort::value::TensorRef;
 
 use crate::configs::FaceDetectorConfig as settings;
 use crate::models::FaceBox;
-use crate::utils::{intersection, union};
+use crate::utils::{intersection, preprocess_onnx_input, union};
 
 pub struct YOLOFaceDetector {
-    model: Session,
-    input_name: String,
-    output_name: String,
+    pub session: Session,
+    pub input_name: String,
+    pub output_name: String,
 }
 
 impl YOLOFaceDetector {
-    pub fn new() -> YOLOFaceDetector {
-        // let now = std::time::Instant::now();
+    pub fn init() -> Self {
         let session = Session::builder()
             .unwrap()
             .commit_from_file(settings::MODEL_PATH)
             .unwrap();
-        // let elapsed = now.elapsed();
-        // println!("Session created. Elapsed time: {:?}", elapsed);
         Self {
-            model: session,
+            session,
             input_name: "images".to_string(),
             output_name: "output0".to_string(),
         }
     }
 
-    fn preprocess(&self, image: &DynamicImage) -> Array4<f32> {
-        // const H: usize = 320;
-        // const W: usize = 320;
-        const HW: usize = settings::INPUT_SIZE.pow(2) as usize;
-        const SCALE: f32 = 1.0f32 / 255.0;
-
-        // Resize and force RGB8
-        let resized = image
-            .resize_exact(
-                settings::INPUT_SIZE,
-                settings::INPUT_SIZE,
-                FilterType::CatmullRom,
-            )
-            .to_rgb8();
-        let raw = resized.into_raw(); // Vec<u8>, len == hw * 3
-
-        // Precompute lut for u8 -> f32 scaled values
-        let mut lut = [0f32; 256];
-        for i in 0..256 {
-            lut[i] = (i as f32) * SCALE;
-        }
-
-        // Single contiguous buffer in CHW ordering: [R..(hw), G..(hw), B..(hw)]
-        let mut buf = vec![0f32; 3 * HW];
-
-        for (i, px) in raw.chunks_exact(3).enumerate() {
-            let r = lut[px[0] as usize];
-            let g = lut[px[1] as usize];
-            let b = lut[px[2] as usize];
-
-            buf[i] = r; // channel 0
-            buf[HW + i] = g; // channel 1
-            buf[2 * HW + i] = b; // channel 2
-        }
-
-        // Convert once into ndarray (cheap)
-        Array4::from_shape_vec(
-            (
-                1,
-                3,
-                settings::INPUT_SIZE as usize,
-                settings::INPUT_SIZE as usize,
-            ),
-            buf,
-        )
-        .expect("shape matches")
-    }
-
     pub fn detect(&mut self, image: &DynamicImage) -> Vec<FaceBox> {
         // let now = std::time::Instant::now();
-        let input_tensor = self.preprocess(image);
+
+        let in_dim = (settings::INPUT_SIZE, settings::INPUT_SIZE);
+        let input_tensor = preprocess_onnx_input(image, in_dim);
+
         // let preproc_time = now.elapsed();
         // println!("Preprocessing time: {:?}", preproc_time);
         // arrays.push(input.view());
 
         let input =
             ort::inputs![&self.input_name => TensorRef::from_array_view(&input_tensor).unwrap()];
-        let outputs = self.model.run(input).unwrap();
+        let outputs = self.session.run(input).unwrap();
         let output = outputs
             .get(&self.output_name.as_str())
             .unwrap()
