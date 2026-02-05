@@ -1,11 +1,9 @@
-use std::path::Path;
-
 use image::{DynamicImage, imageops::FilterType};
 use ndarray::{Array4, Axis, s};
 use ort::session::Session;
 use ort::value::TensorRef;
 
-use crate::configs::FaceDetectorConfig;
+use crate::configs::FaceDetectorConfig as settings;
 use crate::models::FaceBox;
 use crate::utils::{intersection, union};
 
@@ -20,7 +18,7 @@ impl YOLOFaceDetector {
         // let now = std::time::Instant::now();
         let session = Session::builder()
             .unwrap()
-            .commit_from_file(FaceDetectorConfig::MODEL_PATH)
+            .commit_from_file(settings::MODEL_PATH)
             .unwrap();
         // let elapsed = now.elapsed();
         // println!("Session created. Elapsed time: {:?}", elapsed);
@@ -31,27 +29,19 @@ impl YOLOFaceDetector {
         }
     }
 
-    pub fn from_config(model_path: &str) -> YOLOFaceDetector {
-        let session = Session::builder()
-            .unwrap()
-            .commit_from_file(Path::new(model_path))
-            .unwrap();
-        Self {
-            model: session,
-            input_name: "images".to_string(),
-            output_name: "output0".to_string(),
-        }
-    }
-
     fn preprocess(&self, image: &DynamicImage) -> Array4<f32> {
-        const H: usize = 640;
-        const W: usize = 640;
-        const HW: usize = H * W;
+        // const H: usize = 320;
+        // const W: usize = 320;
+        const HW: usize = settings::INPUT_SIZE.pow(2) as usize;
         const SCALE: f32 = 1.0f32 / 255.0;
 
         // Resize and force RGB8
         let resized = image
-            .resize_exact(W as u32, H as u32, FilterType::CatmullRom)
+            .resize_exact(
+                settings::INPUT_SIZE,
+                settings::INPUT_SIZE,
+                FilterType::CatmullRom,
+            )
             .to_rgb8();
         let raw = resized.into_raw(); // Vec<u8>, len == hw * 3
 
@@ -75,7 +65,16 @@ impl YOLOFaceDetector {
         }
 
         // Convert once into ndarray (cheap)
-        Array4::from_shape_vec((1, 3, H, W), buf).expect("shape matches")
+        Array4::from_shape_vec(
+            (
+                1,
+                3,
+                settings::INPUT_SIZE as usize,
+                settings::INPUT_SIZE as usize,
+            ),
+            buf,
+        )
+        .expect("shape matches")
     }
 
     pub fn detect(&mut self, image: &DynamicImage) -> Vec<FaceBox> {
@@ -135,13 +134,13 @@ impl YOLOFaceDetector {
                 .map(|(index, value)| (index, *value))
                 .reduce(|accum, row| if row.1 > accum.1 { row } else { accum })
                 .unwrap();
-            if prob < FaceDetectorConfig::CONFIDENCE {
+            if prob < settings::CONFIDENCE {
                 continue;
             }
-            let xc = row[0] / 640. * (img_width as f32);
-            let yc = row[1] / 640. * (img_height as f32);
-            let w = row[2] / 640. * (img_width as f32);
-            let h = row[3] / 640. * (img_height as f32);
+            let xc = row[0] / settings::INPUT_SIZE as f32 * (img_width as f32);
+            let yc = row[1] / settings::INPUT_SIZE as f32 * (img_height as f32);
+            let w = row[2] / settings::INPUT_SIZE as f32 * (img_width as f32);
+            let h = row[3] / settings::INPUT_SIZE as f32 * (img_height as f32);
             boxes.push(FaceBox {
                 x1: xc - w / 2.,
                 y1: yc - h / 2.,
@@ -159,8 +158,7 @@ impl YOLOFaceDetector {
             boxes = boxes
                 .iter()
                 .filter(|box1| {
-                    intersection(&boxes[0], &box1) / union(&boxes[0], &box1)
-                        < FaceDetectorConfig::IOU
+                    intersection(&boxes[0], &box1) / union(&boxes[0], &box1) < settings::IOU
                 })
                 .copied()
                 .collect();
