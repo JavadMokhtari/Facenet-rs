@@ -473,6 +473,7 @@ dependencies = [
  "image",
  "ndarray",
  "ort",
+ "rayon",
  "thiserror",
  "uniffi",
 ]
