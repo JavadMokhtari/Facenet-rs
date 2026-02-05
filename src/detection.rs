@@ -1,11 +1,11 @@
 use std::path::Path;
 
-use crate::configs::FaceDetectorConfig;
-use image::{DynamicImage, GenericImageView, imageops::FilterType};
-use ndarray::{Array, Axis, Dim, Ix, s};
+use image::{DynamicImage, imageops::FilterType};
+use ndarray::{Array4, Axis, s};
 use ort::session::Session;
 use ort::value::TensorRef;
 
+use crate::configs::FaceDetectorConfig;
 use crate::models::FaceBox;
 use crate::utils::{intersection, union};
 
@@ -17,10 +17,13 @@ pub struct YOLOFaceDetector {
 
 impl YOLOFaceDetector {
     pub fn new() -> YOLOFaceDetector {
+        // let now = std::time::Instant::now();
         let session = Session::builder()
             .unwrap()
             .commit_from_file(FaceDetectorConfig::MODEL_PATH)
             .unwrap();
+        // let elapsed = now.elapsed();
+        // println!("Session created. Elapsed time: {:?}", elapsed);
         Self {
             model: session,
             input_name: "images".to_string(),
@@ -40,23 +43,48 @@ impl YOLOFaceDetector {
         }
     }
 
-    fn preprocess(&self, image: &DynamicImage) -> Array<f32, Dim<[Ix; 4]>> {
-        let resized = image.resize_exact(640, 640, FilterType::CatmullRom);
-        let mut input = Array::zeros((1, 3, 640, 640));
-        for pixel in resized.pixels() {
-            let x = pixel.0 as _;
-            let y = pixel.1 as _;
-            let [r, g, b, _] = pixel.2.0;
-            input[[0, 0, y, x]] = (r as f32) / 255.;
-            input[[0, 1, y, x]] = (g as f32) / 255.;
-            input[[0, 2, y, x]] = (b as f32) / 255.;
+    fn preprocess(&self, image: &DynamicImage) -> Array4<f32> {
+        const H: usize = 640;
+        const W: usize = 640;
+        const HW: usize = H * W;
+        const SCALE: f32 = 1.0f32 / 255.0;
+
+        // Resize and force RGB8
+        let resized = image
+            .resize_exact(W as u32, H as u32, FilterType::CatmullRom)
+            .to_rgb8();
+        let raw = resized.into_raw(); // Vec<u8>, len == hw * 3
+
+        // Precompute lut for u8 -> f32 scaled values
+        let mut lut = [0f32; 256];
+        for i in 0..256 {
+            lut[i] = (i as f32) * SCALE;
         }
-        input
+
+        // Single contiguous buffer in CHW ordering: [R..(hw), G..(hw), B..(hw)]
+        let mut buf = vec![0f32; 3 * HW];
+
+        for (i, px) in raw.chunks_exact(3).enumerate() {
+            let r = lut[px[0] as usize];
+            let g = lut[px[1] as usize];
+            let b = lut[px[2] as usize];
+
+            buf[i] = r; // channel 0
+            buf[HW + i] = g; // channel 1
+            buf[2 * HW + i] = b; // channel 2
+        }
+
+        // Convert once into ndarray (cheap)
+        Array4::from_shape_vec((1, 3, H, W), buf).expect("shape matches")
     }
 
     pub fn detect(&mut self, image: &DynamicImage) -> Vec<FaceBox> {
+        // let now = std::time::Instant::now();
         let input_tensor = self.preprocess(image);
+        // let preproc_time = now.elapsed();
+        // println!("Preprocessing time: {:?}", preproc_time);
         // arrays.push(input.view());
+
         let input =
             ort::inputs![&self.input_name => TensorRef::from_array_view(&input_tensor).unwrap()];
         let outputs = self.model.run(input).unwrap();
@@ -67,6 +95,9 @@ impl YOLOFaceDetector {
             .unwrap()
             .t()
             .into_owned();
+        // let inference_time = now.elapsed() - preproc_time;
+        // println!("Inference time: {:?}", inference_time);
+
         // }
         // let batch_tensor = ndarray::concatenate(Axis(0), &arrays).unwrap();
         //
@@ -134,6 +165,9 @@ impl YOLOFaceDetector {
                 .copied()
                 .collect();
         }
+
+        // let postproc_time = now.elapsed() - preproc_time - inference_time;
+        // println!("Postprocessing time: {:?}", postproc_time);
         result
     }
 }
