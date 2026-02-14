@@ -2,10 +2,12 @@ use image::DynamicImage;
 use ndarray::{Axis, s};
 use ort::session::Session;
 use ort::value::TensorRef;
+use std::path::Path;
+use ultralytics_inference::YOLOModel;
 
 use crate::configs::FaceDetectorConfig as settings;
 use crate::models::FaceBox;
-use crate::utils::{intersection, preprocess_onnx_input, union};
+use crate::utils::{get_image_paths, intersection, preprocess_onnx_input, union};
 
 pub struct YOLOFaceDetector {
     pub session: Session,
@@ -122,28 +124,37 @@ impl YOLOFaceDetector {
     }
 }
 
-//         let results = self.model.run(image).unwrap();
-//         let mut faces = Vec::new();
-//
-//         for result in &results {
-//             if let Some(ref boxes) = result.boxes {
-//                 // We zip the rows of xyxy, xywh, and the confidence scores together
-//                 let xyxy = boxes.xyxy();
-//                 let confs = boxes.conf();
-//
-//                 for i in 0..confs.len() {
-//                     faces.push(FaceBox {
-//                         xyxy: [
-//                             xyxy[i][0].max(0.0).round() as u16,
-//                             xyxy[i][1].max(0.0).round() as u16,
-//                             xyxy[i][2].max(0.0).round() as u16,
-//                             xyxy[i][3].max(0.0).round() as u16,
-//                         ],
-//                         conf: confs[i],
-//                     });
-//                 }
-//             }
-//         }
-//         faces
-//     }
-// }
+pub fn yolo_inference(images_dir: &Path) -> Vec<Vec<FaceBox>> {
+    // Load model - metadata (classes, task, imgsz) is read automatically
+    let mut model = YOLOModel::load(settings::MODEL_PATH).unwrap();
+    let mut outputs = Vec::new();
+
+    let img_paths = get_image_paths(images_dir).unwrap();
+
+    for img_path in img_paths {
+        // Run inference
+        let results = model.predict(img_path).unwrap();
+        let mut output = Vec::new();
+
+        // Process results
+        for result in &results {
+            if let Some(ref boxes) = result.boxes {
+                let bboxes = boxes.xyxy();
+                // println!("Found {} detections", boxes.len());
+                for i in 0..boxes.len() {
+                    let bbox = bboxes.row(i);
+                    let conf = boxes.conf()[i];
+                    output.push(FaceBox {
+                        x1: bbox[0],
+                        y1: bbox[1],
+                        x2: bbox[2],
+                        y2: bbox[3],
+                        confidence: conf,
+                    })
+                }
+            }
+        }
+        outputs.push(output);
+    }
+    outputs
+}
