@@ -4,14 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [lib]
+path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 name = "facenet"
 
 [dependencies]
-ort = "2.0.0-rc.11"
-uniffi = { version = "0.31.0", features = ["cli"] }
 image = "0.25.9"
 ndarray = "0.17.2"
+uniffi = { version = "0.31.0", features = ["cli"] }
+ort = { git = "https://github.com/pykeio/ort.git", rev = "2de34065983a5c034f5afcc072b23b99479f465b" }
+ultralytics-inference = { git = "https://github.com/ultralytics/inference.git" }
+
 
 [build-dependencies]
 uniffi = { version = "0.31.0", features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
