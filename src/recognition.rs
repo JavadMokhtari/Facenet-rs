@@ -30,7 +30,7 @@ impl FaceNetModel {
         let height = (face.y2 as u32).saturating_sub(face.y1 as u32);
 
         let cropped = &image.crop_imm(face.x1 as u32, face.y1 as u32, width, height);
-        cropped.save("cropped.png").unwrap();
+        // cropped.save("cropped.png").unwrap();
 
         // let now = std::time::Instant::now();
 
