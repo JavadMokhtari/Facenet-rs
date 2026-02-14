@@ -1,9 +1,29 @@
-use std::path::Path;
-
 use crate::models::FaceBox;
 use image::DynamicImage;
 use image::imageops::FilterType;
 use ndarray::Array4;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub fn get_image_paths(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let exts = ["jpg", "jpeg", "png", "bmp", "webp"];
+
+    let mut paths = Vec::new();
+
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+
+        if path.is_file() {
+            if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                if exts.iter().any(|x| x.eq_ignore_ascii_case(ext)) {
+                    paths.push(path);
+                }
+            }
+        }
+    }
+    Ok(paths)
+}
 
 pub fn read_image(src: &str) -> DynamicImage {
     // Load image using standard image crate
